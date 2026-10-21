@@ -1,0 +1,86 @@
+groups:
+  - name: ondrya-probe
+    rules:
+      - alert: ProbeDown
+        expr: up{job="ondrya-probe"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Probe metrics endpoint unreachable on {{ $labels.instance }}"
+          description: "Run the capture steps in docs/runbook.md section 9.1 before restarting."
+
+      - alert: ProbeSelfTestFailing
+        expr: probe_selftest_ok == 0
+        for: 30s
+        labels: { severity: page }
+        annotations:
+          summary: "Self-test failing on {{ $labels.instance }}"
+          description: "The process cannot complete a WSS round trip to itself. It exits by itself after 3 failures; check for a diagnostic bundle in /var/log/ondrya-probe/."
+
+      - alert: ProbeCrashLoop
+        expr: probe_crashloop == 1
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "Probe on {{ $labels.instance }} is degraded after repeated watchdog restarts"
+          description: "It answers 503 until the self-test passes repeatedly. Read the diag-*.txt bundles; the cause is not a transient one."
+
+      - alert: ProbeFileDescriptorsHigh
+        expr: probe_open_fds / probe_fd_limit > 0.70 and probe_fd_limit > 0
+        for: 2m
+        labels: { severity: warn }
+        annotations:
+          summary: "{{ $labels.instance }} is using {{ $value | humanizePercentage }} of its file descriptors"
+          description: "Runbook cause 1 or 2: leaked connections or descriptor exhaustion."
+
+      - alert: ProbeGoroutinesAboveBaseline
+        # Baseline is the median over the previous 6 hours.
+        expr: probe_goroutines > 3 * quantile_over_time(0.5, probe_goroutines[6h] offset 5m) and probe_goroutines > 200
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: "{{ $labels.instance }} has {{ $value }} goroutines, over 3x its baseline"
+          description: "Runbook cause 1 or 4. Capture /debug/pprof/goroutine?debug=2 now."
+
+      - alert: ProbeCertificateExpiring
+        expr: probe_cert_expiry_seconds < 14 * 24 * 3600
+        for: 10m
+        labels: { severity: warn }
+        annotations:
+          summary: "Certificate on {{ $labels.instance }} expires in {{ $value | humanizeDuration }}"
+
+      - alert: ProbeCertificateReloadFailing
+        expr: increase(probe_cert_reload_failures_total[30m]) > 0
+        labels: { severity: warn }
+        annotations:
+          summary: "Certificate reload failed on {{ $labels.instance }}; the old certificate is still served"
+
+      - alert: ProbeAcceptErrorsRising
+        expr: sum by (instance) (rate(probe_accept_errors_total[5m])) > 0.1
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: "Accept errors on {{ $labels.instance }}"
+          description: "'too many open files' means runbook cause 2; look at the error label."
+
+      - alert: ProbeWriteTimeoutsRising
+        expr: rate(probe_write_timeouts_total[5m]) > 0.5
+        for: 10m
+        labels: { severity: warn }
+        annotations:
+          summary: "Clients on {{ $labels.instance }} are not reading their pongs"
+          description: "Runbook cause 4 if sessions are also piling up."
+
+      - alert: ProbePanics
+        expr: increase(probe_panics_total[10m]) > 0
+        labels: { severity: warn }
+        annotations:
+          summary: "Recovered panic on {{ $labels.instance }}"
+          description: "The stack is in the container log. Sessions are isolated, but this is a bug."
+
+      - alert: ProbeRestarted
+        expr: changes(probe_start_time_seconds[15m]) > 0
+        labels: { severity: info }
+        annotations:
+          summary: "Probe on {{ $labels.instance }} restarted"
+          description: "If this followed a watchdog exit, a diag-*.txt bundle exists in /var/log/ondrya-probe/."

@@ -1,0 +1,22 @@
+version: "2"
+run:
+  build-tags: [fixture, soak]
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - gosec
+    - bodyclose
+    - noctx
+    - errorlint
+    - misspell
+    - copyloopvar
+    - nilerr
+  exclusions:
+    rules:
+      - path: (_test\.go$|(^|/)testutil/|(^|/)testcert/|(^|/)test/)
+        linters: [gosec, noctx, errcheck, bodyclose]

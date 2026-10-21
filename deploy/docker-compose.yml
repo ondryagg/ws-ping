@@ -1,0 +1,51 @@
+# Ondrya latency probe. Values the owner must supply come from the environment
+# (see probe.env.example); compose refuses to start if a required one is missing.
+# The same file configures the systemd unit, so both ways of running it match:
+#   docker compose --env-file /etc/ondrya-probe/probe.env up -d
+#
+# Host networking is deliberate: published ports go through NAT, docker-proxy
+# and conntrack, and a full conntrack table makes every new connection time out
+# while the process looks healthy. See docs/runbook.md, cause 3.
+services:
+  probe:
+    image: ${PROBE_IMAGE:?set PROBE_IMAGE to a pinned image, ideally ghcr.io/<org>/<name>@sha256:<digest>, never latest}
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    mem_limit: 256m
+    environment:
+      GOMEMLIMIT: 200MiB
+      PROBE_HOSTNAME: ${PROBE_HOSTNAME:?set PROBE_HOSTNAME, for example lg-dal.example.com}
+      PROBE_LISTEN: ${PROBE_LISTEN:?set PROBE_LISTEN, for example :8443}
+      PROBE_ALLOWED_ORIGINS: ${PROBE_ALLOWED_ORIGINS:?set PROBE_ALLOWED_ORIGINS, for example https://ondrya.com}
+      PROBE_NODE_ID: ${PROBE_NODE_ID:?set PROBE_NODE_ID, for example dal-01}
+      PROBE_REGION: ${PROBE_REGION:-}
+      PROBE_METRICS_LISTEN: ${PROBE_METRICS_LISTEN:-127.0.0.1:9109}
+      # The certificate comes from certbot's own directory, mounted at the same path.
+      PROBE_TLS_LETSENCRYPT_DIR: ${PROBE_TLS_LETSENCRYPT_DIR:-/etc/letsencrypt}
+      PROBE_TLS_CERT_NAME: ${PROBE_TLS_CERT_NAME:-}
+    # Group that can read certbot's private key (see deploy/grant-cert-access.sh).
+    group_add: ["${PROBE_CERT_GID:?set PROBE_CERT_GID to the numeric gid that owns the certbot key files}"]
+    volumes:
+      # The whole tree, not live/ alone: live/ holds symlinks into archive/.
+      - ${PROBE_TLS_LETSENCRYPT_DIR:-/etc/letsencrypt}:${PROBE_TLS_LETSENCRYPT_DIR:-/etc/letsencrypt}:ro
+      # Diagnostic bundles and the crash-loop guard. Must be writable by uid 65532:
+      #   install -d -o 65532 -g 65532 -m 0750 /var/log/ondrya-probe
+      - ${PROBE_STATE_DIR:-/var/log/ondrya-probe}:/var/log/ondrya-probe
+      # Kill switch: `touch /run/probe/disabled` makes /ws and /ping answer 503.
+      - ${PROBE_RUN_DIR:-/run/probe}:/run/probe:ro
+    healthcheck:
+      test: ["CMD", "/probe", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

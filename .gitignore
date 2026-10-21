@@ -1,0 +1,8 @@
+bin/
+*.test
+*.out
+probe/test/soak/report.jsonl
+deploy/.env
+*.pem
+*.key
+*.crt

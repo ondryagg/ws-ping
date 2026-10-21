@@ -1,0 +1,55 @@
+# Runs the probe straight from the binary, with the same /etc/ondrya-probe/probe.env
+# the docker compose file uses.
+#
+#   install -m 0755 probe /usr/local/bin/ondrya-probe
+#   useradd --system --no-create-home --shell /usr/sbin/nologin --groups ondrya-cert ondrya-probe
+#   install -m 0644 deploy/ondrya-probe.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now ondrya-probe
+[Unit]
+Description=Ondrya latency probe
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ondrya-probe
+# Group that grant-cert-access.sh gives read access to /etc/letsencrypt.
+SupplementaryGroups=ondrya-cert
+EnvironmentFile=/etc/ondrya-probe/probe.env
+Environment=GOMEMLIMIT=200MiB
+ExecStart=/usr/local/bin/ondrya-probe serve
+# Exit 70 is the probe asking to be restarted after a failed self-test.
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+MemoryMax=256M
+TasksMax=512
+
+# Diagnostic bundles and the crash-loop guard: /var/log/ondrya-probe, owned by the service user.
+LogsDirectory=ondrya-probe
+LogsDirectoryMode=0750
+
+# Binds a port above 1024 as an unprivileged user; no capabilities needed.
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
