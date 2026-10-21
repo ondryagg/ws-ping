@@ -88,6 +88,21 @@ func (w *Watchdog) Healthy() bool {
 	return last != 0 && w.now().Sub(time.Unix(0, last)) <= w.cfg.MaxAge
 }
 
+// verifyServed checks the served chain and hostname against the current roots.
+func (w *Watchdog) verifyServed(cs tls.ConnectionState) error {
+	if len(cs.PeerCertificates) == 0 {
+		return errors.New("server presented no certificate")
+	}
+	inter := x509.NewCertPool()
+	for _, c := range cs.PeerCertificates[1:] {
+		inter.AddCert(c)
+	}
+	_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{
+		DNSName: w.cfg.Hostname, Roots: w.cfg.Roots(), Intermediates: inter,
+	})
+	return err
+}
+
 // Once performs one self-test round trip.
 func (w *Watchdog) Once(ctx context.Context) error {
 	hc := &http.Client{
@@ -98,8 +113,12 @@ func (w *Watchdog) Once(ctx context.Context) error {
 			},
 			TLSClientConfig: &tls.Config{
 				ServerName: w.cfg.Hostname,
-				RootCAs:    w.cfg.Roots(),
 				MinVersion: tls.VersionTLS12,
+				// Verified by hand against the trust pool as it is when the handshake
+				// finishes, not when the dial started: a renewal landing in between
+				// would otherwise fail a perfectly good self-test.
+				InsecureSkipVerify: true, //nolint:gosec // replaced by VerifyConnection below
+				VerifyConnection:   w.verifyServed,
 			},
 			DisableKeepAlives: true,
 		},

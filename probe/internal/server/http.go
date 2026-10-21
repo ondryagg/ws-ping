@@ -21,8 +21,10 @@ func (s *Server) unavailable(w http.ResponseWriter) bool {
 
 // cors applies the allowed-origin headers. A request without an Origin gets
 // none. It returns false after writing a 403 for a present but unknown or
-// duplicated Origin.
+// duplicated Origin; that response carries no CORS headers. Vary: Origin is set
+// on every answer so a shared cache never serves one origin's headers to another.
 func (s *Server) cors(w http.ResponseWriter, r *http.Request) bool {
+	w.Header().Add("Vary", "Origin")
 	vals := r.Header.Values("Origin")
 	if len(vals) == 0 {
 		return true
@@ -34,13 +36,13 @@ func (s *Server) cors(w http.ResponseWriter, r *http.Request) bool {
 	h := w.Header()
 	h.Set("Access-Control-Allow-Origin", vals[0])
 	h.Set("Timing-Allow-Origin", vals[0])
-	h.Add("Vary", "Origin")
 	return true
 }
 
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
+	preflight := r.Method == http.MethodOptions
+	if r.Method != http.MethodGet && !preflight {
+		w.Header().Set("Allow", "GET, OPTIONS")
 		s.reject(w, http.StatusMethodNotAllowed, metrics.ReasonMethod)
 		return
 	}
@@ -60,6 +62,11 @@ func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.cors(w, r) {
 		return
+	}
+	if preflight {
+		h := w.Header()
+		h.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		h.Set("Access-Control-Max-Age", "86400")
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

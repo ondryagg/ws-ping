@@ -815,3 +815,82 @@ func TestSelfTestStaysHealthyWhenListeningOnASpecificIPInMaintenance(t *testing.
 		t.Fatal("visitors must still get 503 in maintenance")
 	}
 }
+
+func TestPingCORSForSeveralOriginsAndPreflight(t *testing.T) {
+	allowed := []string{"https://ondrya.com", "https://www.ondrya.com", "http://localhost:4321", "http://localhost:4322", "http://127.0.0.1:4321"}
+	cfg := testutil.Config(t)
+	cfg.AllowedOrigins = allowed
+	cfg.PingBurst = 50
+	r := testutil.Start(t, cfg, nil)
+	hc := r.Client("127.0.0.21")
+	do := func(method, origin string) *http.Response {
+		req, _ := http.NewRequest(method, r.URL("/ping"), nil)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+			req.Header.Set("Access-Control-Request-Method", "GET")
+		}
+		resp, err := hc.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	for _, o := range allowed {
+		g := do("GET", o)
+		if g.StatusCode != 204 || g.Header.Get("Access-Control-Allow-Origin") != o || g.Header.Get("Timing-Allow-Origin") != o ||
+			g.Header.Get("Vary") != "Origin" {
+			t.Fatalf("GET from %s: %d %v", o, g.StatusCode, g.Header)
+		}
+		p := do("OPTIONS", o)
+		if p.StatusCode != 204 || p.Header.Get("Access-Control-Allow-Origin") != o ||
+			p.Header.Get("Access-Control-Allow-Methods") != "GET, OPTIONS" ||
+			p.Header.Get("Access-Control-Max-Age") != "86400" || p.Header.Get("Vary") != "Origin" {
+			t.Fatalf("OPTIONS from %s: %d %v", o, p.StatusCode, p.Header)
+		}
+	}
+	for _, o := range []string{"https://example.org", "https://ondrya.com.evil.example", "http://localhost:4323", "https://sub.ondrya.com", "null"} {
+		for _, m := range []string{"GET", "OPTIONS"} {
+			resp := do(m, o)
+			if resp.StatusCode != 403 || resp.Header.Get("Access-Control-Allow-Origin") != "" || resp.Header.Get("Timing-Allow-Origin") != "" ||
+				resp.Header.Get("Access-Control-Allow-Methods") != "" {
+				t.Fatalf("%s from %s must be refused without CORS headers: %d %v", m, o, resp.StatusCode, resp.Header)
+			}
+		}
+	}
+	if p := do("OPTIONS", ""); p.StatusCode != 204 || p.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("OPTIONS without Origin: %d %v", p.StatusCode, p.Header)
+	}
+	if resp := do("POST", ""); resp.StatusCode != 405 || resp.Header.Get("Allow") != "GET, OPTIONS" {
+		t.Fatalf("POST: %d %v", resp.StatusCode, resp.Header)
+	}
+}
+
+func TestPingRateLimitIsPerIPAndAnswers429(t *testing.T) {
+	cfg := testutil.Config(t)
+	cfg.PingBurst, cfg.PingRate = 20, 0.001
+	r := testutil.Start(t, cfg, nil)
+	count := func(ip string, n int) (ok, limited int) {
+		hc := r.Client(ip)
+		for i := 0; i < n; i++ {
+			resp, err := hc.Get(r.URL("/ping"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			switch resp.StatusCode {
+			case 204:
+				ok++
+			case 429:
+				limited++
+			}
+		}
+		return
+	}
+	if ok, limited := count("127.0.0.30", 40); ok != 20 || limited != 20 {
+		t.Fatalf("burst 20 then 429: ok=%d limited=%d", ok, limited)
+	}
+	if ok, _ := count("127.0.0.31", 1); ok != 1 {
+		t.Fatal("another address must have its own budget")
+	}
+}

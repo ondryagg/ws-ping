@@ -65,7 +65,8 @@ Error bodies are the plain status text and nothing else.
 
 | Path | Behaviour |
 |---|---|
-| `GET /ping` | `204`, `Cache-Control: no-store`. If the request carries an allowed `Origin`, `Access-Control-Allow-Origin` and `Timing-Allow-Origin` are set to it. An unknown `Origin` gets 403. Rate limited per client IP. |
+| `GET /ping` | `204`, `Cache-Control: no-store`. If the request carries an allowed `Origin`, `Access-Control-Allow-Origin` and `Timing-Allow-Origin` are set to it. `Vary: Origin` is always set. An unknown `Origin` gets 403 with no CORS headers. Rate limited per client IP. |
+| `OPTIONS /ping` | CORS preflight: `204` with `Access-Control-Allow-Origin` (allowed origin only), `Access-Control-Allow-Methods: GET, OPTIONS` and `Access-Control-Max-Age: 86400`. Same origin check and rate limit as `GET`. Any other method gets 405. |
 | `GET /info` | `{"node":"...","region":"...","version":"...","proto":1}` and nothing else. Stays available in maintenance and degraded mode (only `/ws` and `/ping` answer 503). |
 | `GET /healthz` | `200 ok` only if the internal self-test passed within the last 30 s and the node is not degraded; otherwise `503`. Never cached. Keeps answering in maintenance mode. |
 
