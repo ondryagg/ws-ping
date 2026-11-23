@@ -10,9 +10,10 @@
 # process looks healthy. Because of it, the HOST FIREWALL must allow the port.
 services:
   probe:
-    # CHANGE ME: a release from https://github.com/ondryagg/ws-ping/releases.
-    # The release notes give the digest; pin it so a retagged image cannot change what runs.
-    image: ghcr.io/ondryagg/ws-ping:v1.0.0@sha256:CHANGE_ME_DIGEST_FROM_THE_RELEASE_NOTES
+    # Tracks the newest release. For a fixed version use a tag (:v1.0.0) or, to be
+    # immune to retagging, a digest from the release notes (:v1.0.0@sha256:...).
+    image: ghcr.io/ondryagg/ws-ping:latest
+    pull_policy: always
     network_mode: host
     restart: unless-stopped
     read_only: true

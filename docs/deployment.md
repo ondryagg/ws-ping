@@ -11,7 +11,7 @@ This is the short path from a fresh Linux host to a running node. `docs/latency-
 
 ## 1. Get the image
 
-Releases are published to GitHub Container Registry. Open the [latest release](https://github.com/ondryagg/ws-ping/releases), copy the image reference with its digest, and use it as is:
+Releases are published to GitHub Container Registry. The example compose file uses `ghcr.io/ondryagg/ws-ping:latest`, which always points at the newest release. To stay on a fixed version, use a tag (`:v1.0.0`) or pin a digest from the [release notes](https://github.com/ondryagg/ws-ping/releases):
 
 ```
 ghcr.io/ondryagg/ws-ping:v1.0.0@sha256:<digest from the release notes>
@@ -56,7 +56,7 @@ ufw allow 8443/tcp        # or the equivalent nftables / firewalld rule
 
 ## 5. Configure and start
 
-Copy `deploy/docker-compose.example.yml` to the host and edit every line marked `CHANGE ME`: image, hostname, port, node ID, allowed origins, and the `group_add` gid. Then:
+Copy `deploy/docker-compose.example.yml` to the host and edit every line marked `CHANGE ME`: hostname, port, node ID, allowed origins, and the `group_add` gid. Then:
 
 ```bash
 docker compose -f docker-compose.example.yml up -d
@@ -81,7 +81,7 @@ Metrics are on `127.0.0.1:9109` only; scrape them from the node or over a privat
 
 ## Upgrade and roll back
 
-Edit the `image:` line to the new release digest, then:
+With `:latest`, pulling picks up the newest release (the compose file sets `pull_policy: always`, so `up -d` alone also pulls). If you pinned a tag or digest, edit the `image:` line first. Then:
 
 ```bash
 docker compose -f docker-compose.example.yml pull
@@ -89,7 +89,7 @@ docker compose -f docker-compose.example.yml up -d
 docker compose -f docker-compose.example.yml ps
 ```
 
-To roll back, put the previous digest back and run `up -d` again. Sessions last at most 20 s, so a restart costs a visitor one retried measurement.
+To roll back, set `image:` to the previous tag or digest (`latest` cannot go backwards) and run `up -d` again. Sessions last at most 20 s, so a restart costs a visitor one retried measurement.
 
 ## Troubleshooting
 
