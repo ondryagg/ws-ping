@@ -8,7 +8,7 @@
 # Both base images are pinned by digest so the build is reproducible. Update
 # the digests deliberately (docs/latency-probe-setup.md, "Upgrading").
 
-FROM golang:1.26@sha256:5c3f3f28a273c9b61698b2d34f18375929790ab1f1d3835d032d21e2b31eae0c AS build
+FROM golang:1.26@sha256:4165ee6bf3b7811fd7b40373290405c83d0167dcb87ee5f29c427cdcef45ff8f AS build
 ENV CGO_ENABLED=0 GOFLAGS=-mod=readonly GOTOOLCHAIN=local
 WORKDIR /src
 COPY go.mod go.sum ./
