@@ -1,6 +1,6 @@
 # Verification: what was checked, with measured numbers
 
-This is the PR description the spec asks for (section 11): what was verified in the soak tests, with the measured numbers, and what could not be verified without real nodes.
+This records what was verified in the soak tests, with the measured numbers, and what could not be verified without real nodes.
 
 All soak figures come from `probe/test/soak` run against the **built container image** (`ondrya-probe:dev`, distroless, uid 65532, read-only rootfs, `cap_drop: ALL`, 256 MB, `nofile` 65536, host networking) on one Linux host with 16 cores, clients on loopback. Failure-injection tests use the `fixture` build of the same code (`ondrya-probe:fixture`); the production binary rejects every `--test-*` flag (exit 2, tested).
 
@@ -19,7 +19,7 @@ All soak figures come from `probe/test/soak` run against the **built container i
 | Build reproducibility | two local builds of the binary are byte-identical (`-trimpath -buildid=`) |
 | Source-level guard tests (`internal/lint`) | every WebSocket read/write goes through `readFrame`/`writeFrame` with a net deadline and a context deadline; close is bounded; no `http.Get`, `http.ListenAndServe`, `http.DefaultClient` or `http.Server` without `ReadHeaderTimeout`; `context.Background()` only at process roots |
 
-## Failure and soak tests (spec section 10)
+## Failure and soak tests
 
 Run on the final code. "Baseline" means goroutines and open descriptors measured from `/metrics` before the test.
 

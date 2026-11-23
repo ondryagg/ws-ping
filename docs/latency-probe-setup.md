@@ -46,7 +46,7 @@ sh deploy/grant-cert-access.sh          # or pass another certbot directory
 
 It creates the group `ondrya-cert`, makes the certbot tree readable by that group (the private key stays mode 0640, never world-readable), and installs a certbot deploy hook so renewed or new certificates keep that access. The systemd unit joins that group by name. For docker, put the printed numeric gid in `PROBE_CERT_GID`; compose adds the container to that group. Docker mounts the whole certbot directory read-only at the same path, because `live/` is symlinks into `archive/`.
 
-Option B in the spec (built-in ACME with `certmagic` and a Cloudflare DNS-01 token) was not built: it adds a large dependency tree and a long-lived API credential inside an internet-facing container. If you want it, it is a separate change.
+Built-in ACME (certmagic with a Cloudflare DNS-01 token) was not built: it adds a large dependency tree and a long-lived API credential inside an internet-facing container. If you want it, it is a separate change.
 
 ## 3. Firewall
 

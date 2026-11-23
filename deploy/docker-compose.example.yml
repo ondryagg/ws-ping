@@ -1,0 +1,53 @@
+# Self-contained example: edit the values marked CHANGE ME, then
+#   docker compose -f docker-compose.example.yml up -d
+#
+# Step-by-step instructions: docs/deployment.md
+# deploy/docker-compose.yml is the same service driven by /etc/ondrya-probe/probe.env
+# instead of values written in the file; use whichever suits you.
+#
+# Host networking is deliberate: published ports go through NAT, docker-proxy and
+# conntrack, and a full conntrack table makes new connections time out while the
+# process looks healthy. Because of it, the HOST FIREWALL must allow the port.
+services:
+  probe:
+    # CHANGE ME: a release from https://github.com/ondryagg/ws-ping/releases.
+    # The release notes give the digest; pin it so a retagged image cannot change what runs.
+    image: ghcr.io/ondryagg/ws-ping:v1.0.0@sha256:CHANGE_ME_DIGEST_FROM_THE_RELEASE_NOTES
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    mem_limit: 256m
+    environment:
+      GOMEMLIMIT: 200MiB
+      PROBE_HOSTNAME: lg-dal.example.com          # CHANGE ME: DNS name of this node
+      PROBE_LISTEN: ":8443"                      # CHANGE ME if needed; above 1024
+      PROBE_NODE_ID: dal-01                      # CHANGE ME: letters, digits, . _ -
+      PROBE_REGION: ""                           # optional, for example us-south
+      PROBE_ALLOWED_ORIGINS: https://example.com # CHANGE ME: exact origins, comma separated
+      PROBE_METRICS_LISTEN: 127.0.0.1:9109       # loopback on purpose
+      PROBE_TLS_LETSENCRYPT_DIR: /etc/letsencrypt
+      # PROBE_TLS_CERT_NAME: lg-dal.example.com-0001   only if `certbot certificates` shows another name
+    # CHANGE ME: numeric gid printed by deploy/grant-cert-access.sh (or `getent group ondrya-cert`).
+    group_add: ["994"]
+    volumes:
+      # The whole certbot tree, read-only: live/ is symlinks into archive/.
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Diagnostic bundles and crash-loop state; owned by uid 65532.
+      - /var/log/ondrya-probe:/var/log/ondrya-probe
+      # Kill switch: `touch /run/probe/disabled` makes /ws and /ping answer 503.
+      - /run/probe:/run/probe:ro
+    healthcheck:
+      test: ["CMD", "/probe", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

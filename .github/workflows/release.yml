@@ -1,0 +1,134 @@
+name: release
+
+# Manual: Actions > release > Run workflow, pick patch, minor or major.
+# Runs the full CI, builds the image and binaries, pushes the image to GHCR,
+# and creates the vX.Y.Z tag and GitHub release in one step. Nothing is tagged
+# unless everything before it succeeded.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      dry_run:
+        description: Build everything but push nothing and tag nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: script tests
+        run: sh scripts/next-version_test.sh
+      - id: next
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: echo "version=$(sh scripts/next-version.sh "$BUMP")" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: [version, ci]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write       # create the tag and release
+      packages: write       # push the image
+      id-token: write       # build provenance
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      IMAGE: ghcr.io/${{ github.repository }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: probe/go.mod
+          cache-dependency-path: probe/go.sum
+
+      - name: refuse to overwrite an existing tag
+        run: |
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "$VERSION already exists" >&2; exit 1
+          fi
+
+      - name: static binaries and checksums
+        working-directory: probe
+        run: |
+          mkdir -p ../dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -buildid= -X main.version=$VERSION -X main.commit=$GITHUB_SHA" \
+              -o "../dist/ondrya-probe-$VERSION-linux-$arch" .
+          done
+          cd ../dist && sha256sum ondrya-probe-* > SHA256SUMS
+
+      - name: image
+        run: make -C probe image IMAGE="$IMAGE:$VERSION" VERSION="$VERSION" COMMIT="$GITHUB_SHA"
+
+      - name: image smoke test
+        run: make -C probe smoke IMAGE="$IMAGE:$VERSION"
+
+      - name: log in to GHCR
+        if: ${{ !inputs.dry_run }}
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: push image
+        if: ${{ !inputs.dry_run }}
+        id: push
+        run: |
+          docker push "$IMAGE:$VERSION"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$VERSION")
+          echo "ref=$digest" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"
+
+      - name: attest image provenance
+        if: ${{ !inputs.dry_run }}
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: attest binary provenance
+        if: ${{ !inputs.dry_run }}
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: dist/ondrya-probe-*
+
+      - name: tag and release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_REF: ${{ steps.push.outputs.ref }}
+        run: |
+          printf 'Image (pin this in PROBE_IMAGE):\n\n    %s\n' "$IMAGE_REF" > notes.md
+          gh release create "$VERSION" dist/* \
+            --target "$GITHUB_SHA" --title "$VERSION" --generate-notes \
+            --notes-file notes.md
