@@ -23,7 +23,7 @@ RUN go build -trimpath -tags "${TAGS}" \
 
 # Distroless static: CA certificates, no shell, no package manager, and a
 # built-in non-root user (65532).
-FROM gcr.io/distroless/static-debian12@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+FROM gcr.io/distroless/static-debian12@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2
 LABEL org.opencontainers.image.source="https://github.com/ondryagg/ws-ping" \
       org.opencontainers.image.description="Ondrya latency probe: WebSocket echo service" \
       org.opencontainers.image.licenses="NOASSERTION"
