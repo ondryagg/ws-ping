@@ -17,7 +17,12 @@ services:
     network_mode: host
     restart: unless-stopped
     read_only: true
-    user: "65532:65532"
+    # uid 0 inside the container so it can read certbot's root-only files with no
+    # group setup. It holds no powers beyond that: every capability is dropped,
+    # the root filesystem is read-only, the certbot mount is read-only, and
+    # no-new-privileges blocks escalation. For an unprivileged user instead, see
+    # deploy/docker-compose.yml (uid 65532 plus grant-cert-access.sh).
+    user: "0:0"
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 512
@@ -34,12 +39,10 @@ services:
       PROBE_METRICS_LISTEN: 127.0.0.1:9109       # loopback on purpose
       PROBE_TLS_LETSENCRYPT_DIR: /etc/letsencrypt
       # PROBE_TLS_CERT_NAME: lg-dal.example.com-0001   only if `certbot certificates` shows another name
-    # CHANGE ME: numeric gid printed by deploy/grant-cert-access.sh (or `getent group ondrya-cert`).
-    group_add: ["994"]
     volumes:
       # The whole certbot tree, read-only: live/ is symlinks into archive/.
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      # Diagnostic bundles and crash-loop state; owned by uid 65532.
+      # Diagnostic bundles and crash-loop state; the only writable path. Root-owned is fine.
       - /var/log/ondrya-probe:/var/log/ondrya-probe
       # Kill switch: `touch /run/probe/disabled` makes /ws and /ping answer 503.
       - /run/probe:/run/probe:ro
